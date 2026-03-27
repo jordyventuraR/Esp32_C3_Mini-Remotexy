@@ -1,0 +1,204 @@
+
+//Librerias necesarias
+#include <stdint.h>
+#include <stdbool.h>
+#include "inc/hw_memmap.h"
+#include "inc/hw_types.h"
+#include "driverlib/sysctl.h"
+#include "driverlib/gpio.h"
+#include "inc/tm4c123gh6pm.h"
+
+//Librerias PWM
+#include "driverlib/pwm.h"
+#include "driverlib/pin_map.h"
+
+
+//*****************************Librerias de UART************************************//
+#include "driverlib/uart.h"
+#include "utils/uartstdio.h"
+#include "inc/hw_uart.h"
+#include <string.h>
+
+
+//--------------------------------Variables de PWM----------------------------------------
+#define PWM_FREQUENCY 5000              //Frecuencia del PWM
+uint32_t Load;
+uint32_t PWMClock;
+uint8_t Adjust = 0;
+int velocidad = 0;
+
+
+//---------------------------------Definicion de puertos
+#define Puerto 0x40024000 //Es el pueto E
+
+
+//-------------------------------------------------Funciones para el movimiento de los motores-----------------------------------
+//Funcion para usar el PWM
+void servo(int velocidad, uint32_t pin){
+     uint32_t  pulso = (velocidad * (Load - 1)) / 100;
+     PWMPulseWidthSet(PWM0_BASE, pin, pulso);
+}
+
+/*PE0->IN1/M1(Derecho)
+ * PE1->IN2/M1
+ * PE2->IN1/M2
+ * PE3->IN2/M2(Izquierdo)*/
+//Funcion para moverse hacia delante
+void delante(int velocidad, int fuerza){
+     GPIOPinWrite(Puerto, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 |  GPIO_PIN_3 |GPIO_PIN_4  | GPIO_PIN_5 | GPIO_PIN_7, 21);
+     servo(velocidad, PWM_OUT_2);
+     servo(velocidad, PWM_OUT_3);
+     servo(fuerza, PWM_OUT_1);
+}
+
+ //Funcion para moverse hacia atras
+void atras(int velocidad, int fuerza){
+     GPIOPinWrite(Puerto, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 |  GPIO_PIN_3 |GPIO_PIN_4  | GPIO_PIN_5  | GPIO_PIN_6 | GPIO_PIN_7, 26);
+     servo(velocidad, PWM_OUT_2);
+     servo(velocidad, PWM_OUT_3);
+     servo(fuerza, PWM_OUT_1);
+}
+
+ //Funcion para moverse hacia la izquierda hacia delante
+void izquierdaDelante(int velocidad, int fuerza){
+     GPIOPinWrite(Puerto, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 |  GPIO_PIN_3 |GPIO_PIN_4  | GPIO_PIN_5  | GPIO_PIN_6 | GPIO_PIN_7, 21);
+     servo(velocidad/2, PWM_OUT_2);
+     servo(velocidad, PWM_OUT_3);
+     servo(fuerza, PWM_OUT_1);
+}
+
+ //Funcion para moverse hacia la derecha adelante
+void derechaDelante(int velocidad, int fuerza){
+     GPIOPinWrite(Puerto, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 |  GPIO_PIN_3 |GPIO_PIN_4  | GPIO_PIN_5  | GPIO_PIN_6 | GPIO_PIN_7, 21);
+     servo(velocidad, PWM_OUT_2);
+     servo(velocidad/2, PWM_OUT_3);
+     servo(fuerza, PWM_OUT_1);
+}
+
+ //Funcion para moverse hacia la izquierda hacia atras
+void izquierdaAtras(int velocidad, int fuerza){
+    GPIOPinWrite(Puerto, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 |  GPIO_PIN_3 |GPIO_PIN_4  | GPIO_PIN_5  | GPIO_PIN_6 | GPIO_PIN_7, 26);
+    servo(velocidad/2, PWM_OUT_2);
+    servo(velocidad, PWM_OUT_3);
+    servo(fuerza, PWM_OUT_1);
+}
+
+ //Funcion para moverse hacia la derecha hacia atras
+void derechaAtras(int velocidad, int fuerza){
+     GPIOPinWrite(Puerto, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 |  GPIO_PIN_3 |GPIO_PIN_4  | GPIO_PIN_5  | GPIO_PIN_6 | GPIO_PIN_7, 26);
+     servo(velocidad, PWM_OUT_2);
+     servo(velocidad/2, PWM_OUT_3);
+     servo(fuerza, PWM_OUT_1);
+}
+
+ //Funcion para girar respecto su eje desde la izquierda
+void giroIzquierda(int velocidad, int fuerza){
+     GPIOPinWrite(Puerto, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 |  GPIO_PIN_3 |GPIO_PIN_4  | GPIO_PIN_5  | GPIO_PIN_6 | GPIO_PIN_7, 22);
+     servo(velocidad, PWM_OUT_2);
+     servo(velocidad, PWM_OUT_3);
+     servo(fuerza, PWM_OUT_1);
+}
+
+ //Funcion para girar respecto su eje desde la derecha
+void giroDerecha(int velocidad, int fuerza){
+     GPIOPinWrite(Puerto, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 |  GPIO_PIN_3 |GPIO_PIN_4  | GPIO_PIN_5| GPIO_PIN_6 | GPIO_PIN_7, 25);
+     servo(velocidad, PWM_OUT_2);
+     servo(velocidad, PWM_OUT_3);
+     servo(fuerza, PWM_OUT_1);
+
+}
+
+void stop(int fuerza){
+    GPIOPinWrite(Puerto, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 |  GPIO_PIN_3 |GPIO_PIN_4  | GPIO_PIN_5| GPIO_PIN_6 | GPIO_PIN_7, 31);
+    servo(0, PWM_OUT_2);
+    servo(0, PWM_OUT_3);
+    servo(fuerza, PWM_OUT_1);
+
+}
+
+
+//--//Variables para el manejo del mensaje que viene en formato (int (0-100) para velocidad, char direccion, fuerza (0-100)
+char buffer[30];
+int i = 0;
+
+int main(void)
+
+{
+    //Configuracion de relojes
+    SysCtlClockSet(SYSCTL_SYSDIV_2_5|SYSCTL_USE_PLL|SYSCTL_OSC_MAIN|SYSCTL_XTAL_16MHZ);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOB);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_GPIOE);
+    SysCtlPWMClockSet(SYSCTL_PWMDIV_64);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_PWM0);
+    SysCtlPeripheralEnable(SYSCTL_PERIPH_UART1);
+
+
+    //Gpio
+    GPIOPinTypePWM(GPIO_PORTB_BASE, GPIO_PIN_4 | GPIO_PIN_5 | GPIO_PIN_6 | GPIO_PIN_7);
+    GPIOPinTypeUART(GPIO_PORTB_BASE, GPIO_PIN_0 | GPIO_PIN_1);
+    GPIOPinConfigure(GPIO_PB4_M0PWM2);     //PWM1 -> Para motor derecho/EN1
+    GPIOPinConfigure(GPIO_PB5_M0PWM3);     //PWM2 ->Para motor Izquierdo/EN2
+    GPIOPinConfigure(GPIO_PB7_M0PWM1);     //PWM1 -> Para motor de la pala/EN1
+    GPIOPinConfigure(GPIO_PB0_U1RX);       //UART->PB0->Rx
+    GPIOPinConfigure(GPIO_PB1_U1TX);       //UART->PB1->TX
+
+
+    //Configuracion de pines para salida a puente H
+    GPIOPinTypeGPIOOutput(Puerto, GPIO_PIN_0 | GPIO_PIN_1 | GPIO_PIN_2 |  GPIO_PIN_3 |GPIO_PIN_4  |
+                          GPIO_PIN_5);
+
+    // Configurar UART1 correctamente
+    UARTConfigSetExpClk(UART1_BASE, SysCtlClockGet(), 9600,
+                UART_CONFIG_WLEN_8 | UART_CONFIG_STOP_ONE | UART_CONFIG_PAR_NONE);
+
+
+    PWMClock = SysCtlClockGet() / 64;
+
+    Load = (PWMClock / PWM_FREQUENCY);
+
+    PWMGenConfigure(PWM0_BASE, PWM_GEN_3, PWM_GEN_MODE_DOWN);
+    PWMGenPeriodSet(PWM0_BASE, PWM_GEN_3, Load);
+
+    PWMGenConfigure(PWM0_BASE, PWM_GEN_0, PWM_GEN_MODE_DOWN);
+    PWMGenPeriodSet(PWM0_BASE, PWM_GEN_0, Load);
+
+    PWMPulseWidthSet(PWM0_BASE, PWM_OUT_3, Adjust * Load / 1000);//Establecer el ancho de pulso
+    PWMPulseWidthSet(PWM0_BASE, PWM_OUT_2, Adjust * Load / 1000); ////Establecer el ancho de pulso
+    PWMPulseWidthSet(PWM0_BASE, PWM_OUT_1, Adjust * Load / 1000);
+
+    PWMOutputState(PWM0_BASE, PWM_OUT_2_BIT | PWM_OUT_3_BIT | PWM_OUT_1_BIT, true);
+    PWMGenEnable(PWM0_BASE, PWM_GEN_0);
+    PWMGenEnable(PWM0_BASE, PWM_GEN_3);
+
+    while(1)
+    {
+        if(UARTCharsAvail(UART1_BASE)){
+            char C = UARTCharGet(UART1_BASE);
+            if(C != '\n' && C != '\r'){
+                if(i < sizeof(buffer) - 1){
+                    buffer[i++] = C;
+                }
+            }else{
+                buffer[i] = '\0'; // fin del string
+                i = 0;
+
+                // Parsear: "75,D,30"
+                int fuerza = 0;
+                char dir;
+
+                sscanf(buffer, "%d,%c,%d", &velocidad, &dir, &fuerza);
+                switch(dir){
+                    case 'D': delante(velocidad, fuerza); break;
+                    case 'A': atras(velocidad, fuerza);  break;
+                    case 'I': izquierdaDelante(velocidad, fuerza); break;
+                    case 'F': derechaDelante(velocidad, fuerza); break;
+                    case 'L': izquierdaAtras(velocidad, fuerza); break;
+                    case 'R' : derechaAtras(velocidad, fuerza); break;
+                    case 'C' : giroIzquierda(velocidad, fuerza); break;
+                    case 'W' : giroDerecha(velocidad, fuerza); break;
+                    case 'S': stop(fuerza); break;
+                }
+            }
+        }
+    }
+}
