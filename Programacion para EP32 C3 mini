@@ -1,0 +1,157 @@
+/*---------------------------Programa que usa la Aplicacion RemoteXY como mando del robot carrito de futbot
+------------------------------Para el proyecto de electronica 3*/
+//Librerias
+#include <BLEDevice.h>
+#include <RemoteXY.h>
+
+//Parametros necesarios para Bluetooth
+#define ARDUINO_USB_CDC_ON_BOOT 1
+ 
+//Parametros de RemoteXY
+#define REMOTEXY_MODE__ESP32CORE_BLE
+#define REMOTEXY_BLUETOOTH_NAME "Futgol Bot"
+
+//Parametros para la comunicacion UART
+HardwareSerial SerialUART(1);
+
+//Aplicacion RemoteXY
+#pragma pack(push, 1)  
+uint8_t const PROGMEM RemoteXY_CONF_PROGMEM[] =   // 106 bytes V19 
+  { 255,4,0,4,0,99,0,19,0,0,0,70,117,116,83,117,109,111,66,111,
+  116,0,16,2,106,200,200,72,1,1,4,0,5,204,43,143,143,9,12,51,
+  51,32,2,26,31,71,21,122,71,71,99,46,26,26,56,0,2,24,135,0,
+  0,0,0,0,0,200,66,0,0,160,65,0,0,32,65,0,0,0,64,24,
+  0,4,97,93,7,86,185,38,10,31,0,2,26,1,35,47,67,67,150,21,
+  24,24,0,2,31,0 };
+  
+// this structure defines all the variables and events of your control interface 
+struct {
+
+    // input variables
+  int8_t joystick_x; // from -100 to 100
+  int8_t joystick_y; // from -100 to 100
+  int8_t slideForce; // from 0 to 100
+  uint8_t pushShot; // =1 if button pressed, else =0, from 0 to 1
+
+    // output variables
+  float InstrumentVelocity; // from 0 to 100
+
+    // other variable
+  uint8_t connect_flag;  // =1 if wire connected, else =0
+
+} RemoteXY;   
+#pragma pack(pop)
+ 
+/////////////////////////////////////////////
+//           END RemoteXY include          //
+/////////////////////////////////////////////
+
+
+String direccion = " ";
+String mensaje = " ";
+int velocidad = 0;
+int fuerza = 0;
+
+
+void setup() 
+{
+  Serial.begin(115200);
+  SerialUART.begin(9600, SERIAL_8N1, 20, 21); // RX, TX
+  delay(1000);  // dale tiempo al monitor
+
+  Serial.println("Empezo la programacion...");
+
+  RemoteXY_Init ();  // initialization by macros   
+
+}
+
+void loop() 
+{ 
+  RemoteXY_Handler();   //
+
+   static unsigned long last = 0;
+
+  if (millis() - last > 100) {
+    last = millis();
+
+    Serial.println("Futgol Bot: ");
+
+
+    if(RemoteXY.pushShot==1){
+      fuerza = RemoteXY.slideForce;
+    }
+  }
+
+
+  delay(10);            //
+
+  //  Si se presiona el boton se activa la pala
+  if(RemoteXY.pushShot==1){
+    fuerza    = RemoteXY.slideForce;
+  }
+
+  //Se mueve hacia adelante
+  if(RemoteXY.joystick_x==0 && RemoteXY.joystick_y>0){
+    direccion = "D";
+    velocidad = RemoteXY.joystick_y;
+
+  }
+
+  //Se mueve hacia atras
+  else if(RemoteXY.joystick_x==0 && RemoteXY.joystick_y<0){
+    direccion = "A";
+    velocidad = RemoteXY.joystick_y*-1;
+
+  }
+
+  //Se mueve hacia la izquierda delante
+  else if(RemoteXY.joystick_x<0 && RemoteXY.joystick_y>0){
+    direccion = "I";
+    velocidad = RemoteXY.joystick_y;
+
+  }
+
+  //Se mueve hacia la derecha delante
+  else if(RemoteXY.joystick_x>0 && RemoteXY.joystick_y>0){
+    direccion = "F";
+    velocidad = RemoteXY.joystick_y;
+  }
+
+  //Se mueve hacia la izquierda atras
+  else if(RemoteXY.joystick_x<0 && RemoteXY.joystick_y<0){
+    direccion = "L";
+    velocidad = RemoteXY.joystick_y*-1;
+
+  }
+
+  //Se mueve hacia la derecha atras
+  else if(RemoteXY.joystick_x>0 && RemoteXY.joystick_y<0){
+    direccion = "R";
+    velocidad = RemoteXY.joystick_y*-1;
+
+  }
+
+  //Gira en sentido de la izquierda
+  else if(RemoteXY.joystick_x<0 && RemoteXY.joystick_y==0){
+    direccion = "C";
+    velocidad = RemoteXY.joystick_x*-1;
+
+  }
+
+  //Gira en sentido de la derecha
+  else if(RemoteXY.joystick_x>0 && RemoteXY.joystick_y==0){
+    direccion = "W";
+    velocidad = RemoteXY.joystick_x;
+  }
+
+  else {
+    direccion = "S"; // STOP
+    velocidad = 0;
+  }
+  
+  RemoteXY.InstrumentVelocity=velocidad;
+  String resultado = String(velocidad) + "," + direccion + "," + String(fuerza);
+  Serial.println(resultado);
+  SerialUART.println(resultado);
+  delay(50);
+}
